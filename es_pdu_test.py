@@ -1,6 +1,8 @@
 import socket
 import time
 from io import BytesIO
+import secrets
+import string
 
 from opendis.DataOutputStream import DataOutputStream
 from opendis.dis7 import EntityStatePdu
@@ -19,7 +21,8 @@ def send():
     pdu.entityID.entityID = 42
     pdu.entityID.siteID = 17
     pdu.entityID.applicationID = 23
-    pdu.marking.setString('Igor3d')
+    marking_string = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(5))
+    pdu.marking.setString(marking_string)
 
      # Entity in Monterey, CA, USA facing North, no roll or pitch
     montereyLocation = gps.llarpy2ecef(deg2rad(36.6),   # longitude (radians)
@@ -43,9 +46,9 @@ def send():
     pdu.serialize(outputStream)
     data = memoryStream.getvalue()
 
-    while True:
-        udpSocket.sendto(data, (DESTINATION_ADDRESS, UDP_PORT))
-        print("Sent {}. {} bytes".format(pdu.__class__.__name__, len(data)))
-        time.sleep(60)
+    udpSocket.sendto(data, (DESTINATION_ADDRESS, UDP_PORT))
+    print("Sent {} for {}. {} bytes".format(pdu.__class__.__name__, pdu.marking.charactersString(), len(data)))
+    time.sleep(60)
 
-send()
+while True:
+    send()

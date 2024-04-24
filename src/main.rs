@@ -1,4 +1,4 @@
-use bytes::BytesMut;
+use dis_rs::entity_state::model::EntityState;
 use dis_rs::enumerations::PduType;
 use dis_rs::model::PduBody;
 use futures::SinkExt;
@@ -8,7 +8,7 @@ use tokio::task::JoinSet; // for websocket.send()
 
 #[tokio::main]
 async fn main() {
-    let (tx, rx) = watch::channel(vec![]);
+    let (tx, rx) = watch::channel(EntityState::default());
 
     let mut tasks = JoinSet::new();
     tasks.spawn(receive_packets(tx));
@@ -16,29 +16,25 @@ async fn main() {
     loop {}
 }
 
-async fn receive_packets(tx: watch::Sender<Vec<u8>>) {
+async fn receive_packets(tx: watch::Sender<EntityState>) {
     let socket = UdpSocket::bind("0.0.0.0:9000").await.unwrap();
     loop {
+        // Receive packets
         let mut buf = [0; 1024];
-        let (len, addr) = socket.recv_from(&mut buf).await.unwrap();
+        let (len, _addr) = socket.recv_from(&mut buf).await.unwrap();
 
+        // Process the PDU
         let pdus = dis_rs::parse(&buf[..len]).unwrap();
-        let es_pdu = pdus.get(0).unwrap();
-        if es_pdu.header.pdu_type == PduType::EntityState {
-            let mut buf = BytesMut::with_capacity(es_pdu.pdu_length() as usize);
-            let _ = es_pdu.serialize(&mut buf);
-            if let PduBody::EntityState(pdu) = &es_pdu.body {
-                println!(
-                    "Received an ES PDU from {} for {}",
-                    addr, pdu.entity_marking.marking_string
-                );
-                tx.send(buf.to_vec()).unwrap();
+        let pdu = pdus.get(0).unwrap();
+        if pdu.header.pdu_type == PduType::EntityState {
+            if let PduBody::EntityState(entity_state) = &pdu.body {
+                tx.send(entity_state.clone()).unwrap();
             }
         }
     }
 }
 
-async fn service_clients(rx: watch::Receiver<Vec<u8>>) {
+async fn service_clients(rx: watch::Receiver<EntityState>) {
     let socket = tokio::net::TcpListener::bind("0.0.0.0:9001").await;
     let listener = socket.expect("Failed to bind");
     while let Ok((stream, address)) = listener.accept().await {
@@ -49,7 +45,7 @@ async fn service_clients(rx: watch::Receiver<Vec<u8>>) {
 async fn handle_client_connection(
     stream: tokio::net::TcpStream,
     address: std::net::SocketAddr,
-    mut rx: watch::Receiver<Vec<u8>>,
+    mut rx: watch::Receiver<EntityState>,
 ) -> tokio_tungstenite::tungstenite::Result<()> {
     let mut ws_stream = tokio_tungstenite::accept_async(stream)
         .await
@@ -62,8 +58,8 @@ async fn handle_client_connection(
         rx.changed().await.unwrap();
 
         // Send data to client
-        let received_data = rx.borrow_and_update().clone();
-        let received_string = String::from_utf8(received_data).unwrap();
+        let pdu = rx.borrow_and_update().clone();
+        let received_string = pdu.entity_marking.marking_string;
         ws_stream
             .send(tokio_tungstenite::tungstenite::Message::Text(
                 received_string,
