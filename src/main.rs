@@ -1,10 +1,8 @@
 use dis_rs::entity_state::model::EntityState;
 use dis_rs::enumerations::PduType;
-use dis_rs::model::{Location, Orientation, PduBody, VectorF32};
+use dis_rs::model::PduBody;
 use futures::SinkExt;
-use nalgebra::Vector3;
 use serde::{Deserialize, Serialize};
-use std::f64::consts::PI;
 use tokio::net::UdpSocket;
 use tokio::sync::watch; // mpsc
 use tokio::task::JoinSet; // for websocket.send()
@@ -37,8 +35,8 @@ async fn receive_packets(tx: watch::Sender<EntityState>) {
         let (len, _addr) = socket.recv_from(&mut buf).await.unwrap();
 
         // Process the PDU
-        let pdus = dis_rs::parse(&buf[..len]).unwrap();
-        let pdu = pdus.get(0).unwrap();
+        let all_pdu = dis_rs::parse(&buf[..len]).unwrap();
+        let pdu = all_pdu.get(0).unwrap();
         if pdu.header.pdu_type == PduType::EntityState {
             if let PduBody::EntityState(entity_state) = &pdu.body {
                 tx.send(entity_state.clone()).unwrap();
@@ -87,37 +85,10 @@ fn create_entity_structure_packet(pdu: EntityState) -> String {
             pdu.entity_location.y_coordinate,
             pdu.entity_location.z_coordinate,
         ],
-        angle: calculate_angle(
-            pdu.entity_location,
-            pdu.entity_orientation,
-            pdu.entity_linear_velocity,
-        ),
+        angle: pdu.entity_orientation.psi,
         id: pdu.entity_id.entity_id,
     };
     serde_json::to_string(&packet).expect("Serialization failed")
-}
-
-fn calculate_angle(_location: Location, orientation: Orientation, _velocity: VectorF32) -> f32 {
-    // let loc = Vector3::new(
-    //     location.x_coordinate,
-    //     location.y_coordinate,
-    //     location.z_coordinate,
-    // );
-    // let euler = Vector3::new(orientation.phi, orientation.phi, orientation.phi);
-    // let vel = Vector3::new(
-    //     velocity.first_vector_component as f64,
-    //     velocity.second_vector_component as f64,
-    //     velocity.third_vector_component as f64,
-    // );
-    //
-    // let linear_velocity = vel.cross(&loc);
-    // let linear_velocity_magnitude = linear_velocity.magnitude();
-    //
-    // // Calculate angle in xy-plane
-    // let theta = linear_velocity.y.atan2(linear_velocity.x);
-    // // Calculate angle with respect to z-axis
-    // let phi = linear_velocity.z.acos() / PI;
-    orientation.psi
 }
 
 fn print_new_connection(address: &std::net::SocketAddr) {
