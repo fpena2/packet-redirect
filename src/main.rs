@@ -1,7 +1,8 @@
 use dis_rs::entity_state::model::EntityState;
 use dis_rs::enumerations::PduType;
-use dis_rs::model::PduBody;
+use dis_rs::model::{Location, PduBody};
 use futures::SinkExt;
+use map_3d::{ecef2geodetic, rad2deg, Ellipsoid};
 use serde::{Deserialize, Serialize};
 use tokio::net::UdpSocket;
 use tokio::sync::watch; // mpsc
@@ -11,10 +12,13 @@ use tokio::task::JoinSet; // for websocket.send()
 // { EntityId : EntityStructure }
 #[derive(Debug, Serialize, Deserialize)]
 struct EntityStructure {
+    entity_id: u16,
+    force_id: u8,
+    location: [f64; 3],
+    orientation: [f32; 3],
+    orientation_geodetic: [f64; 3],
+    angle: f32, // This is custom
     marking: String,
-    position: [f64; 3],
-    angle: f32,
-    id: u16,
 }
 
 #[tokio::main]
@@ -79,14 +83,21 @@ async fn handle_client_connection(
 
 fn create_entity_structure_packet(pdu: EntityState) -> String {
     let packet = EntityStructure {
-        marking: pdu.entity_marking.marking_string.clone(),
-        position: [
+        entity_id: pdu.entity_id.entity_id,
+        force_id: pdu.force_id.into(),
+        location: [
             pdu.entity_location.x_coordinate,
             pdu.entity_location.y_coordinate,
             pdu.entity_location.z_coordinate,
         ],
-        angle: pdu.entity_orientation.psi,
-        id: pdu.entity_id.entity_id,
+        orientation_geodetic: get_geodetic_entity_location(pdu.entity_location), // custom
+        orientation: [
+            pdu.entity_orientation.psi,
+            pdu.entity_orientation.theta,
+            pdu.entity_orientation.phi,
+        ],
+        angle: pdu.entity_orientation.psi, // custom
+        marking: pdu.entity_marking.marking_string.clone(),
     };
     serde_json::to_string(&packet).expect("Serialization failed")
 }
@@ -99,4 +110,16 @@ fn print_new_connection(address: &std::net::SocketAddr) {
         "New WebSocket connection at {}: {:?}",
         current_time, address
     );
+}
+
+fn get_geodetic_entity_location(loc: Location) -> [f64; 3] {
+    let lla = ecef2geodetic(
+        loc.x_coordinate,
+        loc.y_coordinate,
+        loc.z_coordinate,
+        Ellipsoid::default(),
+    );
+
+    // We need to output lat & lon as degrees
+    (rad2deg(lla.0), rad2deg(lla.1), lla.2).into()
 }
