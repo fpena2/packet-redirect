@@ -1,6 +1,6 @@
-use dis_rs::entity_state::model::EntityState;
-use dis_rs::enumerations::PduType;
-use dis_rs::model::{Location, PduBody};
+use dis_rs::entity_state::model::{EntityAppearance, EntityState};
+use dis_rs::enumerations::{AppearanceEntityorObjectState, EntityKind, PduType, PlatformDomain};
+use dis_rs::model::{Location, Orientation, PduBody};
 use futures::SinkExt;
 use map_3d::{ecef2geodetic, rad2deg, Ellipsoid};
 use serde::{Deserialize, Serialize};
@@ -14,10 +14,9 @@ use tokio::task::JoinSet; // for websocket.send()
 struct EntityStructure {
     entity_id: u16,
     force_id: u8,
-    location: [f64; 3],
-    orientation: [f32; 3],
-    orientation_geodetic: [f64; 3],
-    angle: f32, // This is custom
+    orientation_euler: [f64; 3],
+    location_geodetic: [f64; 3],
+    state: u8,
     marking: String,
 }
 
@@ -43,7 +42,11 @@ async fn receive_packets(tx: watch::Sender<EntityState>) {
         let pdu = all_pdu.get(0).unwrap();
         if pdu.header.pdu_type == PduType::EntityState {
             if let PduBody::EntityState(entity_state) = &pdu.body {
-                tx.send(entity_state.clone()).unwrap();
+                if entity_state.entity_type.kind == EntityKind::Platform
+                    && entity_state.entity_type.domain == PlatformDomain::Air
+                {
+                    tx.send(entity_state.clone()).unwrap();
+                }
             }
         }
     }
@@ -82,22 +85,17 @@ async fn handle_client_connection(
 }
 
 fn create_entity_structure_packet(pdu: EntityState) -> String {
+    let entity_appearance = match pdu.entity_appearance {
+        EntityAppearance::AirPlatform(ref air_platform_appearance) => air_platform_appearance.state,
+        _ => AppearanceEntityorObjectState::Deactivated,
+    };
     let packet = EntityStructure {
         entity_id: pdu.entity_id.entity_id,
         force_id: pdu.force_id.into(),
-        location: [
-            pdu.entity_location.x_coordinate,
-            pdu.entity_location.y_coordinate,
-            pdu.entity_location.z_coordinate,
-        ],
-        orientation_geodetic: get_geodetic_entity_location(pdu.entity_location), // custom
-        orientation: [
-            pdu.entity_orientation.psi,
-            pdu.entity_orientation.theta,
-            pdu.entity_orientation.phi,
-        ],
-        angle: pdu.entity_orientation.psi, // custom
+        location_geodetic: get_geodetic_entity_location(pdu.entity_location),
+        orientation_euler: get_euler_entity_orientation(pdu.entity_orientation),
         marking: pdu.entity_marking.marking_string.clone(),
+        state: entity_appearance.into(), // custom
     };
     serde_json::to_string(&packet).expect("Serialization failed")
 }
@@ -112,14 +110,20 @@ fn print_new_connection(address: &std::net::SocketAddr) {
     );
 }
 
-fn get_geodetic_entity_location(loc: Location) -> [f64; 3] {
+fn get_geodetic_entity_location(location: Location) -> [f64; 3] {
     let lla = ecef2geodetic(
-        loc.x_coordinate,
-        loc.y_coordinate,
-        loc.z_coordinate,
+        location.x_coordinate,
+        location.y_coordinate,
+        location.z_coordinate,
         Ellipsoid::default(),
     );
+    [rad2deg(lla.0), rad2deg(lla.1), lla.2]
+}
 
-    // We need to output lat & lon as degrees
-    (rad2deg(lla.0), rad2deg(lla.1), lla.2).into()
+fn get_euler_entity_orientation(orientation: Orientation) -> [f64; 3] {
+    [
+        rad2deg(orientation.psi as f64),
+        rad2deg(orientation.theta as f64),
+        rad2deg(orientation.phi as f64),
+    ]
 }

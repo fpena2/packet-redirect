@@ -24,6 +24,16 @@ def send():
     marking_string = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(5))
     pdu.marking.setString(marking_string)
 
+    # F-22 Raptor
+    pdu.entityType.entityKind = 1
+    pdu.entityType.domain = 2
+    pdu.entityType.country = 225
+    pdu.entityType.category = 1
+    pdu.entityType.subcategory = 6
+    pdu.entityType.specific = 1
+    pdu.entityType.extra = 0
+    
+
      # Entity in Monterey, CA, USA facing North, no roll or pitch
     montereyLocation = gps.llarpy2ecef(deg2rad(36.6),   # longitude (radians)
                                        deg2rad(-121.9), # latitude (radians)
@@ -40,7 +50,6 @@ def send():
     pdu.entityOrientation.theta = montereyLocation[4]
     pdu.entityOrientation.phi = montereyLocation[5]
 
-
     memoryStream = BytesIO()
     outputStream = DataOutputStream(memoryStream)
     pdu.serialize(outputStream)
@@ -48,7 +57,7 @@ def send():
 
     udpSocket.sendto(data, (DESTINATION_ADDRESS, UDP_PORT))
     print("Sent {} for {}. {} bytes".format(pdu.__class__.__name__, pdu.marking.charactersString(), len(data)))
-    time.sleep(60)
+    time.sleep(5)
 
 while True:
     send()
