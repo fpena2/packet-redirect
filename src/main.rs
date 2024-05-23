@@ -31,7 +31,7 @@ async fn main() {
 }
 
 async fn receive_packets(tx: watch::Sender<EntityState>) {
-    let socket = UdpSocket::bind("0.0.0.0:9000").await.unwrap();
+    let socket = UdpSocket::bind("127.0.0.1:9000").await.unwrap();
     loop {
         // Receive packets
         let mut buf = [0; 1024];
@@ -53,7 +53,7 @@ async fn receive_packets(tx: watch::Sender<EntityState>) {
 }
 
 async fn service_clients(rx: watch::Receiver<EntityState>) {
-    let socket = tokio::net::TcpListener::bind("0.0.0.0:9001").await;
+    let socket = tokio::net::TcpListener::bind("127.0.0.1:9001").await;
     let listener = socket.expect("Failed to bind");
     while let Ok((stream, address)) = listener.accept().await {
         tokio::spawn(handle_client_connection(stream, address, rx.clone()));
