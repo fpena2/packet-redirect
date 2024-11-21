@@ -28,7 +28,7 @@ impl SubscriberHandler {
     }
 
     async fn publish(stream: TcpStream, mut rx: Receiver<String>) -> anyhow::Result<()> {
-        // Open the web socket for this subscriber
+        // Open the websocket for this subscriber
         let mut ws_stream = accept_async(stream).await?;
 
         // Wait for the rx to change and send data to the subscriber
